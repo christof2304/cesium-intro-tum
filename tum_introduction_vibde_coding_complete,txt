@@ -1,0 +1,720 @@
+// ============================================================================
+// CesiumJS Sandcastle - 3D Model Viewer with Shadow Simulation
+// Features: Element Info Box, Date/Time Control for Shadows (CET/CEST)
+// ============================================================================
+
+// Set Cesium ION Access Token
+Cesium.Ion.defaultAccessToken = 'your token here';
+
+// ============================================================================
+// VIEWER INITIALIZATION
+// ============================================================================
+
+// Initialize Viewer with Cesium World Terrain
+const viewer = new Cesium.Viewer('cesiumContainer', {
+    terrain: Cesium.Terrain.fromWorldTerrain({
+        requestWaterMask: true,
+        requestVertexNormals: true
+    }),
+    shadows: true,
+    shadowMode: Cesium.ShadowMode.ENABLED,
+    animation: true,
+    timeline: true,
+    infoBox: false, // We use our custom info box
+    selectionIndicator: false
+});
+
+// Enable shadows on the globe
+viewer.scene.globe.enableLighting = true;
+viewer.scene.globe.shadows = Cesium.ShadowMode.ENABLED;
+viewer.shadows = true;
+
+// Configure shadow map for better quality
+viewer.shadowMap.enabled = true;
+viewer.shadowMap.softShadows = true;
+viewer.shadowMap.size = 2048;
+
+console.log('✅ Viewer initialized with World Terrain and shadows enabled');
+
+// ============================================================================
+// TIMEZONE UTILITIES (CET/CEST to UTC)
+// ============================================================================
+
+/**
+ * Determines if a given date is in Central European Summer Time (CEST)
+ * CEST: Last Sunday of March to last Sunday of October
+ */
+function isCEST(date) {
+    const year = date.getUTCFullYear();
+    
+    // Find last Sunday of March
+    const march = new Date(Date.UTC(year, 2, 31));
+    while (march.getUTCDay() !== 0) {
+        march.setUTCDate(march.getUTCDate() - 1);
+    }
+    const cestStart = new Date(Date.UTC(year, 2, march.getUTCDate(), 1, 0, 0)); // 01:00 UTC
+    
+    // Find last Sunday of October
+    const october = new Date(Date.UTC(year, 9, 31));
+    while (october.getUTCDay() !== 0) {
+        october.setUTCDate(october.getUTCDate() - 1);
+    }
+    const cestEnd = new Date(Date.UTC(year, 9, october.getUTCDate(), 1, 0, 0)); // 01:00 UTC
+    
+    return date >= cestStart && date < cestEnd;
+}
+
+/**
+ * Converts CET/CEST time to UTC
+ * CET = UTC+1, CEST = UTC+2
+ */
+function cetToUtc(year, month, day, hour, minute) {
+    // Create a date in UTC first to check DST
+    const checkDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    const isDST = isCEST(checkDate);
+    
+    // CET is UTC+1, CEST is UTC+2
+    const offset = isDST ? 2 : 1;
+    
+    // Convert to UTC by subtracting the offset
+    let utcHour = hour - offset;
+    let utcDay = day;
+    let utcMonth = month;
+    let utcYear = year;
+    
+    if (utcHour < 0) {
+        utcHour += 24;
+        utcDay -= 1;
+        if (utcDay < 1) {
+            utcMonth -= 1;
+            if (utcMonth < 1) {
+                utcMonth = 12;
+                utcYear -= 1;
+            }
+            // Get days in previous month
+            const daysInMonth = new Date(utcYear, utcMonth, 0).getDate();
+            utcDay = daysInMonth;
+        }
+    }
+    
+    const timeZoneName = isDST ? 'CEST (UTC+2)' : 'CET (UTC+1)';
+    console.log(`🕐 Converting ${hour}:${String(minute).padStart(2, '0')} ${timeZoneName} to UTC: ${utcHour}:${String(minute).padStart(2, '0')}`);
+    
+    return {
+        year: utcYear,
+        month: utcMonth,
+        day: utcDay,
+        hour: utcHour,
+        minute: minute,
+        isDST: isDST,
+        timeZoneName: timeZoneName
+    };
+}
+
+/**
+ * Sets the viewer time from CET input
+ */
+function setTimeFromCET(dateStr, timeStr) {
+    const dateParts = dateStr.split('-');
+    const timeParts = timeStr.split(':');
+    
+    const year = parseInt(dateParts[0]);
+    const month = parseInt(dateParts[1]);
+    const day = parseInt(dateParts[2]);
+    const hour = parseInt(timeParts[0]);
+    const minute = parseInt(timeParts[1]) || 0;
+    
+    const utc = cetToUtc(year, month, day, hour, minute);
+    
+    const julianDate = Cesium.JulianDate.fromDate(
+        new Date(Date.UTC(utc.year, utc.month - 1, utc.day, utc.hour, utc.minute, 0))
+    );
+    
+    viewer.clock.currentTime = julianDate;
+    viewer.clock.shouldAnimate = false;
+    
+    console.log(`✅ Time set to: ${dateStr} ${timeStr} ${utc.timeZoneName}`);
+    updateTimeDisplay();
+}
+
+/**
+ * Gets current date as YYYY-MM-DD string
+ */
+function getCurrentDateString() {
+    const now = Cesium.JulianDate.toDate(viewer.clock.currentTime);
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+// ============================================================================
+// UI CREATION
+// ============================================================================
+
+// Create main control panel
+const controlPanel = document.createElement('div');
+controlPanel.id = 'controlPanel';
+controlPanel.innerHTML = `
+    <style>
+        #controlPanel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(38, 38, 38, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 13px;
+            z-index: 1000;
+            min-width: 220px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        #controlPanel h3 {
+            margin: 0 0 12px 0;
+            font-size: 15px;
+            color: #4fc3f7;
+            border-bottom: 1px solid #4fc3f7;
+            padding-bottom: 8px;
+        }
+        #controlPanel button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin: 6px 0;
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        #controlPanel button:hover {
+            background: #2196f3;
+        }
+        #controlPanel select {
+            width: 100%;
+            padding: 10px;
+            margin: 6px 0;
+            background: #424242;
+            color: white;
+            border: 1px solid #666;
+            border-radius: 5px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        #controlPanel select:focus {
+            outline: none;
+            border-color: #4fc3f7;
+        }
+        #timeDisplay {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        #timeDisplay .label {
+            color: #888;
+        }
+        #timeDisplay .value {
+            color: #4fc3f7;
+        }
+        .section-title {
+            font-size: 12px;
+            color: #aaa;
+            margin: 15px 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            background: #333;
+            border-radius: 5px;
+            margin: 6px 0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toggle-container:hover {
+            background: #444;
+        }
+        .toggle-container input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            cursor: pointer;
+            accent-color: #4fc3f7;
+        }
+        .toggle-label {
+            flex: 1;
+            user-select: none;
+        }
+    </style>
+    <h3>🏗️ Shadow Simulation</h3>
+    <div class="section-title">Layer Controls</div>
+    <label class="toggle-container">
+        <input type="checkbox" id="toggleOSMBuildings">
+        <span class="toggle-label">🏙️ OSM Buildings</span>
+    </label>
+    <div class="section-title">Custom Date & Time</div>
+    <button id="btnSetDateTime">📅 Set Date/Time (CET)</button>
+    <div class="section-title">Quick Selection</div>
+    <select id="quickTimeSelect">
+        <option value="">-- Select Time --</option>
+        <option value="current">🕐 Current Time</option>
+        <option value="08:00">🌅 Morning (08:00 CET)</option>
+        <option value="12:00">☀️ Noon (12:00 CET)</option>
+        <option value="15:00">🌤️ Afternoon (15:00 CET)</option>
+        <option value="18:00">🌆 Evening (18:00 CET)</option>
+    </select>
+    <div id="timeDisplay">
+        <span class="label">Date:</span> <span class="value" id="displayDate">Loading...</span><br>
+        <span class="label">Time (CET):</span> <span class="value" id="displayTimeCET">Loading...</span><br>
+        <span class="label">Time (UTC):</span> <span class="value" id="displayTimeUTC">Loading...</span>
+    </div>
+`;
+document.body.appendChild(controlPanel);
+
+// Create info box for element properties
+const infoBox = document.createElement('div');
+infoBox.id = 'elementInfoBox';
+infoBox.innerHTML = `
+    <style>
+        #elementInfoBox {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(38, 38, 38, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 1000;
+            max-width: 380px;
+            max-height: 70vh;
+            overflow-y: auto;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        #elementInfoBox h3 {
+            margin: 0 0 12px 0;
+            font-size: 15px;
+            color: #ffb74d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #closeInfoBox {
+            background: #d32f2f;
+            color: white;
+            border: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            transition: background 0.2s;
+        }
+        #closeInfoBox:hover {
+            background: #f44336;
+        }
+        .property-row {
+            display: flex;
+            padding: 6px 0;
+            border-bottom: 1px solid #444;
+        }
+        .property-row:last-child {
+            border-bottom: none;
+        }
+        .property-name {
+            flex: 0 0 140px;
+            color: #888;
+            word-break: break-word;
+        }
+        .property-value {
+            flex: 1;
+            color: #fff;
+            word-break: break-word;
+        }
+        .property-row.highlight {
+            background: rgba(255, 183, 77, 0.15);
+            margin: 0 -10px;
+            padding: 8px 10px;
+            border-radius: 4px;
+        }
+        .property-row.highlight .property-name {
+            color: #ffb74d;
+            font-weight: bold;
+        }
+        .property-row.highlight .property-value {
+            color: #fff59d;
+        }
+        #propertiesContainer {
+            margin-top: 10px;
+        }
+        .no-properties {
+            color: #888;
+            font-style: italic;
+            padding: 10px 0;
+        }
+    </style>
+    <h3>
+        <span>📋 Element Properties</span>
+        <button id="closeInfoBox">✕</button>
+    </h3>
+    <div id="propertiesContainer"></div>
+`;
+document.body.appendChild(infoBox);
+
+// ============================================================================
+// EVENT HANDLERS
+// ============================================================================
+
+// Important properties to highlight
+const highlightProperties = ['categoryName', 'Category', 'Family', 'Type', 'Level', 'Name', 'ElementId'];
+
+// Store original color for restoration
+let selectedFeature = null;
+let originalColor = null;
+
+// OSM Buildings tileset reference
+let osmBuildingsTileset = null;
+
+/**
+ * Loads or removes OSM Buildings
+ */
+async function toggleOSMBuildings(enabled) {
+    if (enabled) {
+        if (!osmBuildingsTileset) {
+            try {
+                console.log('🏙️ Loading OSM Buildings...');
+                
+                // Load OSM Buildings from Cesium ION (Asset ID: 96188)
+                osmBuildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188, {
+                    shadows: Cesium.ShadowMode.ENABLED
+                });
+                
+                viewer.scene.primitives.add(osmBuildingsTileset);
+                console.log('✅ OSM Buildings loaded with shadows enabled');
+                
+            } catch (error) {
+                console.error('❌ Error loading OSM Buildings:', error);
+                document.getElementById('toggleOSMBuildings').checked = false;
+                alert('Error loading OSM Buildings. Please try again.');
+                return;
+            }
+        } else {
+            osmBuildingsTileset.show = true;
+            console.log('🏙️ OSM Buildings shown');
+        }
+    } else {
+        if (osmBuildingsTileset) {
+            osmBuildingsTileset.show = false;
+            console.log('🏙️ OSM Buildings hidden');
+        }
+    }
+}
+
+/**
+ * Updates the time display panel
+ */
+function updateTimeDisplay() {
+    const julianDate = viewer.clock.currentTime;
+    const jsDate = Cesium.JulianDate.toDate(julianDate);
+    
+    // Format date
+    const dateStr = jsDate.toISOString().split('T')[0];
+    
+    // Format UTC time
+    const utcHours = String(jsDate.getUTCHours()).padStart(2, '0');
+    const utcMinutes = String(jsDate.getUTCMinutes()).padStart(2, '0');
+    const utcTimeStr = `${utcHours}:${utcMinutes}`;
+    
+    // Calculate CET/CEST time
+    const isDST = isCEST(jsDate);
+    const offset = isDST ? 2 : 1;
+    let cetHours = jsDate.getUTCHours() + offset;
+    if (cetHours >= 24) cetHours -= 24;
+    const cetTimeStr = `${String(cetHours).padStart(2, '0')}:${utcMinutes} ${isDST ? 'CEST' : 'CET'}`;
+    
+    document.getElementById('displayDate').textContent = dateStr;
+    document.getElementById('displayTimeCET').textContent = cetTimeStr;
+    document.getElementById('displayTimeUTC').textContent = utcTimeStr + ' UTC';
+}
+
+/**
+ * Handles click on 3D elements
+ */
+function handleElementClick(movement) {
+    // Reset previous selection
+    if (selectedFeature) {
+        selectedFeature.color = originalColor;
+        selectedFeature = null;
+        originalColor = null;
+    }
+    
+    const pickedFeature = viewer.scene.pick(movement.position);
+    
+    if (!Cesium.defined(pickedFeature)) {
+        infoBox.style.display = 'none';
+        return;
+    }
+    
+    console.log('🖱️ Element clicked:', pickedFeature);
+    
+    // Highlight selected element in yellow
+    if (pickedFeature.color) {
+        originalColor = Cesium.Color.clone(pickedFeature.color);
+        pickedFeature.color = Cesium.Color.YELLOW.withAlpha(0.8);
+        selectedFeature = pickedFeature;
+    }
+    
+    // Get properties
+    const propertiesContainer = document.getElementById('propertiesContainer');
+    propertiesContainer.innerHTML = '';
+    
+    let properties = {};
+    let foundCategories = [];
+    
+    // Try to get properties from different sources
+    if (pickedFeature.getPropertyIds) {
+        const propertyIds = pickedFeature.getPropertyIds();
+        console.log('📝 Found property IDs:', propertyIds);
+        
+        propertyIds.forEach(id => {
+            const value = pickedFeature.getProperty(id);
+            if (value !== undefined && value !== null && value !== '') {
+                properties[id] = value;
+                if (highlightProperties.includes(id)) {
+                    foundCategories.push(`${id}: ${value}`);
+                }
+            }
+        });
+    }
+    
+    // Also check for tileset properties
+    if (pickedFeature.tileset && pickedFeature.tileset.properties) {
+        Object.keys(pickedFeature.tileset.properties).forEach(key => {
+            if (!properties[key]) {
+                properties[key] = pickedFeature.tileset.properties[key];
+            }
+        });
+    }
+    
+    // Check content metadata
+    if (pickedFeature.content && pickedFeature.content.getFeature) {
+        try {
+            const feature = pickedFeature.content.getFeature(pickedFeature.featureId);
+            if (feature && feature.getPropertyIds) {
+                feature.getPropertyIds().forEach(id => {
+                    if (!properties[id]) {
+                        properties[id] = feature.getProperty(id);
+                    }
+                });
+            }
+        } catch (e) {
+            // Feature access not available
+        }
+    }
+    
+    if (foundCategories.length > 0) {
+        console.log('✨ Important properties found:', foundCategories);
+    }
+    
+    // Sort properties - highlighted ones first
+    const sortedKeys = Object.keys(properties).sort((a, b) => {
+        const aHighlight = highlightProperties.includes(a);
+        const bHighlight = highlightProperties.includes(b);
+        if (aHighlight && !bHighlight) return -1;
+        if (!aHighlight && bHighlight) return 1;
+        return a.localeCompare(b);
+    });
+    
+    if (sortedKeys.length === 0) {
+        propertiesContainer.innerHTML = '<div class="no-properties">No properties available for this element.</div>';
+    } else {
+        sortedKeys.forEach(key => {
+            const value = properties[key];
+            const isHighlight = highlightProperties.includes(key);
+            
+            const row = document.createElement('div');
+            row.className = 'property-row' + (isHighlight ? ' highlight' : '');
+            row.innerHTML = `
+                <div class="property-name">${key}</div>
+                <div class="property-value">${formatPropertyValue(value)}</div>
+            `;
+            propertiesContainer.appendChild(row);
+        });
+    }
+    
+    infoBox.style.display = 'block';
+}
+
+/**
+ * Formats property values for display
+ */
+function formatPropertyValue(value) {
+    if (value === null || value === undefined) return '-';
+    if (typeof value === 'object') {
+        try {
+            return JSON.stringify(value, null, 2);
+        } catch (e) {
+            return String(value);
+        }
+    }
+    return String(value);
+}
+
+/**
+ * Opens date/time input prompts
+ */
+function openDateTimePrompt() {
+    const currentDate = getCurrentDateString();
+    
+    const dateInput = prompt(
+        '📅 Enter date (Format: YYYY-MM-DD)\n\nExample: 2024-07-15',
+        currentDate
+    );
+    
+    if (!dateInput) return;
+    
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateInput)) {
+        alert('❌ Invalid date format!\n\nPlease use: YYYY-MM-DD\nExample: 2024-07-15');
+        return;
+    }
+    
+    const timeInput = prompt(
+        '🕐 Enter time in CET/CEST (Format: HH:MM)\n\nExample: 14:30\n\nNote: Summer/winter time is automatically detected.',
+        '12:00'
+    );
+    
+    if (!timeInput) return;
+    
+    // Validate time format
+    const timeRegex = /^\d{1,2}:\d{2}$/;
+    if (!timeRegex.test(timeInput)) {
+        alert('❌ Invalid time format!\n\nPlease use: HH:MM\nExample: 14:30');
+        return;
+    }
+    
+    // Normalize time format
+    const timeParts = timeInput.split(':');
+    const normalizedTime = `${String(parseInt(timeParts[0])).padStart(2, '0')}:${timeParts[1]}`;
+    
+    setTimeFromCET(dateInput, normalizedTime);
+}
+
+/**
+ * Handles quick time selection
+ */
+function handleQuickTimeSelect(value) {
+    if (!value) return;
+    
+    if (value === 'current') {
+        viewer.clock.currentTime = Cesium.JulianDate.now();
+        viewer.clock.shouldAnimate = false;
+        console.log('✅ Time set to current time');
+        updateTimeDisplay();
+        return;
+    }
+    
+    const currentDate = getCurrentDateString();
+    setTimeFromCET(currentDate, value);
+}
+
+// ============================================================================
+// ATTACH EVENT LISTENERS
+// ============================================================================
+
+// Set Date/Time button
+document.getElementById('btnSetDateTime').addEventListener('click', openDateTimePrompt);
+
+// Quick time dropdown
+document.getElementById('quickTimeSelect').addEventListener('change', function(e) {
+    handleQuickTimeSelect(e.target.value);
+    e.target.value = ''; // Reset dropdown
+});
+
+// Close info box button
+document.getElementById('closeInfoBox').addEventListener('click', function() {
+    infoBox.style.display = 'none';
+    // Reset highlight
+    if (selectedFeature) {
+        selectedFeature.color = originalColor;
+        selectedFeature = null;
+        originalColor = null;
+    }
+});
+
+// OSM Buildings toggle
+document.getElementById('toggleOSMBuildings').addEventListener('change', function(e) {
+    toggleOSMBuildings(e.target.checked);
+});
+
+// Click handler for 3D elements
+const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+clickHandler.setInputAction(handleElementClick, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+// Update time display periodically
+setInterval(updateTimeDisplay, 1000);
+
+// ============================================================================
+// LOAD 3D MODEL
+// ============================================================================
+
+async function loadModel() {
+    try {
+        console.log('📦 Loading 3D model (Asset ID: your asset id)...');
+        
+        const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(your asset id, {
+            shadows: Cesium.ShadowMode.ENABLED,
+            enableDebugWireframe: false
+        });
+        
+        viewer.scene.primitives.add(tileset);
+        
+        // Wait for tileset to be ready
+        await tileset.readyPromise;
+        
+        console.log('✅ 3D model loaded successfully');
+        console.log('📍 Location: Munich, Germany');
+        
+        // Zoom to tileset with optimal viewing angle
+        await viewer.zoomTo(tileset, new Cesium.HeadingPitchRange(
+            Cesium.Math.toRadians(0),    // Heading: North
+            Cesium.Math.toRadians(-35),  // Pitch: Looking down at 35 degrees
+            tileset.boundingSphere.radius * 2.5  // Distance: 2.5x the model radius
+        ));
+        
+        console.log('📷 Camera zoomed to asset');
+        
+        // Set initial time to noon for good shadows
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        setTimeFromCET(dateStr, '12:00');
+        
+    } catch (error) {
+        console.error('❌ Error loading model:', error);
+        alert('Error loading 3D model. Please check the Asset ID and your Cesium ION token.');
+    }
+}
+
+// Initial time display update
+updateTimeDisplay();
+
+// Load the model
+loadModel();
+
+console.log('🚀 Application initialized');
+console.log('📌 Click on elements to see their properties');
+console.log('☀️ Use controls to simulate shadows at different times');
