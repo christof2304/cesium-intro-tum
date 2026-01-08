@@ -1,0 +1,49 @@
+## Basic Setup:
+- Use Cesium ION Token: "Add your ION token here"
+- Load the 3D model with Asset ID: "Add your ION asset ID here"
+- Enable Cesium World Terrain with shadows and realistic lighting
+- Initial camera view should be on the asset 
+- Initialize the terrain with:
+
+```javascript
+// Initialize Viewer with Cesium World Terrain
+const viewer = new Cesium.Viewer('cesiumContainer', {
+  terrain: Cesium.Terrain.fromWorldTerrain({
+```
+
+**IMPORTANT:** In Sandcastle, event handlers must be added with addEventListener (inline onclick does not work)
+
+## Feature 1: Element Info Box
+When clicking on a 3D element:
+- Display all properties in an info box (top right)
+- Important properties (categoryName, Family, Type, Level) should be highlighted
+- The clicked element is marked in yellow
+- The box can be closed with X
+
+## Feature 2: Precise Date/Time Control for Shadow Simulation
+
+**"Set Date/Time" Button:**
+- Opens two input prompts sequentially
+- First prompt: Date (Format: YYYY-MM-DD, e.g., 2024-07-15)
+- Second prompt: Time in CET (Format: HH:MM, e.g., 14:30)
+- Shadows are calculated for this exact time. Shadows affect terrain as well.
+- Automatic handling of CET/CEST (summer/winter time)
+
+**Dropdown menu with quick selection (keeps the current date):**
+- Current Time
+- Morning (08:00 CET)
+- Noon (12:00 CET)
+- Afternoon (15:00 CET)
+- Evening (18:00 CET)
+
+## Technical Requirements:
+- Code must be completely in JavaScript (Sandcastle only accepts JS)
+- HTML elements for panels must be created dynamically (e.g., as string with innerHTML)
+- Robust error handling for property access
+- Console.log for important actions (found categories, set time, etc.)
+- Time conversion between CET and UTC (Cesium uses UTC internally)
+
+## Example Workflow for Users:
+1. Model loads automatically and is zoomed to
+2. Click on element shows its properties
+3. With "Set Date/Time" shadows can be simulated for any point in time (in CET)
