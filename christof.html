@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D BIM Viewer - Shadow Simulation</title>
+    
+    <!-- Cesium JS -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        #cesiumContainer {
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* Control Panel Styles */
+        #controlPanel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(38, 38, 38, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            z-index: 1000;
+            min-width: 240px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+        }
+        
+        #controlPanel::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        #controlPanel::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+        }
+        
+        #controlPanel::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 3px;
+        }
+        
+        .section-header {
+            font-weight: bold;
+            font-size: 15px;
+            margin: 20px 0 12px 0;
+            border-bottom: 1px solid #555;
+            padding-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .section-header:first-child {
+            margin-top: 0;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 10px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #607D8B, #546E7A);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #f44336, #d32f2f);
+            color: white;
+        }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, #FF9800, #F57C00);
+            color: white;
+        }
+        
+        .btn-info {
+            background: linear-gradient(135deg, #2196F3, #1976D2);
+            color: white;
+        }
+        
+        .btn-purple {
+            background: linear-gradient(135deg, #9C27B0, #7B1FA2);
+            color: white;
+        }
+        
+        .btn-small {
+            padding: 8px 10px;
+            font-size: 13px;
+            margin-bottom: 5px;
+            background: linear-gradient(135deg, #455A64, #37474F);
+        }
+        
+        .select-wrapper {
+            margin-bottom: 12px;
+        }
+        
+        .select-wrapper label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-size: 12px;
+        }
+        
+        .select-wrapper select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #555;
+            background: #333;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        
+        .select-wrapper select:hover {
+            border-color: #777;
+        }
+        
+        .select-wrapper select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        
+        .info-display {
+            padding: 10px;
+            background: #333;
+            border-radius: 6px;
+            font-size: 13px;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        
+        .info-display .label {
+            color: #4CAF50;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        
+        .counter {
+            color: #aaa;
+        }
+        
+        .counter strong {
+            color: #FF9800;
+        }
+        
+        /* Hidden List Styles */
+        #hiddenList {
+            margin-top: 8px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        
+        #hiddenList::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        #hiddenList::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+        
+        .hidden-list-header {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        
+        .hidden-item {
+            padding: 8px 10px;
+            margin: 4px 0;
+            background: rgba(255, 152, 0, 0.15);
+            border-radius: 5px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 3px solid #FF9800;
+            transition: all 0.2s;
+        }
+        
+        .hidden-item:hover {
+            background: rgba(255, 152, 0, 0.3);
+        }
+        
+        .hidden-item-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 160px;
+        }
+        
+        .hidden-item-icon {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        /* Info Box Styles */
+        #infoBox {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(38, 38, 38, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-size: 13px;
+            z-index: 1000;
+            max-width: 380px;
+            max-height: 70vh;
+            overflow-y: auto;
+            display: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+        }
+        
+        #infoBox::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        #infoBox::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 3px;
+        }
+        
+        .info-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #555;
+            padding-bottom: 10px;
+        }
+        
+        .info-title {
+            font-weight: bold;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .close-btn {
+            background: #ff4444;
+            border: none;
+            color: white;
+            width: 26px;
+            height: 26px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        
+        .close-btn:hover {
+            background: #ff6666;
+        }
+        
+        .important-prop {
+            background: linear-gradient(90deg, rgba(46, 125, 50, 0.4) 0%, transparent 100%);
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border-left: 3px solid #4CAF50;
+        }
+        
+        .important-prop .prop-key {
+            color: #81c784;
+            font-weight: bold;
+        }
+        
+        .important-prop .prop-value {
+            color: white;
+            margin-left: 6px;
+        }
+        
+        .other-props-header {
+            color: #aaa;
+            font-size: 11px;
+            margin: 15px 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .other-prop {
+            padding: 6px 10px;
+            margin: 3px 0;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .other-prop .prop-key {
+            color: #888;
+        }
+        
+        .other-prop .prop-value {
+            color: #ddd;
+            margin-left: 6px;
+        }
+        
+        /* Loading Overlay */
+        #loadingOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 4px solid #333;
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: white;
+            margin-top: 20px;
+            font-size: 16px;
+        }
+        
+        .loading-subtext {
+            color: #888;
+            margin-top: 8px;
+            font-size: 13px;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            #controlPanel {
+                max-width: 200px;
+                font-size: 12px;
+                padding: 10px;
+            }
+            
+            .btn {
+                padding: 8px;
+                font-size: 12px;
+            }
+            
+            #infoBox {
+                max-width: 280px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay">
+        <div class="loader"></div>
+        <div class="loading-text">Loading 3D Models...</div>
+        <div class="loading-subtext">Initializing viewer and terrain</div>
+    </div>
+    
+    <!-- Cesium Container -->
+    <div id="cesiumContainer"></div>
+    
+    <!-- Control Panel -->
+    <div id="controlPanel">
+        <div class="section-header">🌞 Shadow Simulation</div>
+        
+        <button id="setDateTimeBtn" class="btn btn-primary">
+            📅 Set Date/Time
+        </button>
+        
+        <div class="select-wrapper">
+            <label>Quick Time Selection:</label>
+            <select id="quickTimeSelect">
+                <option value="">-- Select Time --</option>
+                <option value="current">🕐 Current Time</option>
+                <option value="08:00">🌅 Morning (08:00 CET)</option>
+                <option value="12:00">☀️ Noon (12:00 CET)</option>
+                <option value="15:00">🌤️ Afternoon (15:00 CET)</option>
+                <option value="18:00">🌆 Evening (18:00 CET)</option>
+            </select>
+        </div>
+        
+        <div id="currentTimeDisplay" class="info-display">
+            <div class="label">Current Time</div>
+            <div>Loading...</div>
+        </div>
+        
+        <div class="section-header">🏙️ Layers</div>
+        
+        <button id="toggleOsmBtn" class="btn btn-secondary">
+            🏢 Enable OSM Buildings
+        </button>
+        
+        <div class="section-header">👁️ Element Visibility</div>
+        
+        <button id="hideSelectedBtn" class="btn btn-warning" disabled>
+            🙈 Hide Selected
+        </button>
+        
+        <button id="showAllBtn" class="btn btn-purple">
+            👁️ Show All Hidden
+        </button>
+        
+        <div id="hiddenCounter" class="info-display counter">
+            Hidden elements: <strong>0</strong>
+        </div>
+        
+        <div id="hiddenList"></div>
+        
+        <div class="section-header">🎯 Navigation</div>
+        
+        <button id="zoomToAllBtn" class="btn btn-info">
+            🔍 Zoom to All Assets
+        </button>
+        
+        <div id="assetButtons"></div>
+    </div>
+    
+    <!-- Info Box -->
+    <div id="infoBox"></div>
+
+    <script>
+        // ============================================
+        // Configuration
+        // ============================================
+        const CONFIG = {
+            cesiumToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2NTY4OWFmYy05NzI4LTQ4ZWEtODc5Yi0zYWQ2Njg5ZDFiMTgiLCJpZCI6MjYzNTkwLCJpYXQiOjE3NTIyNTM2MzZ9.ie5CjK4mgkYmOOdiJp-Zwdy_biqwWXFAVOeD3Fx6_Ro",
+            assetIds: [4355290, 4355310],
+            importantProperties: ['categoryName', 'Family', 'Type', 'Level', 'Name', 'ObjectType']
+        };
+
+        // ============================================
+        // Global State
+        // ============================================
+        let viewer = null;
+        let selectedFeature = null;
+        let originalColor = null;
+        let osmBuildingsTileset = null;
+        let osmBuildingsEnabled = false;
+        let loadedTilesets = [];
+        let hiddenFeatures = [];
+
+        // ============================================
+        // Initialize Cesium
+        // ============================================
+        async function initCesium() {
+            Cesium.Ion.defaultAccessToken = CONFIG.cesiumToken;
+
+            viewer = new Cesium.Viewer('cesiumContainer', {
+                terrain: Cesium.Terrain.fromWorldTerrain({
+                    requestWaterMask: true,
+                    requestVertexNormals: true
+                }),
+                shadows: true,
+                shouldAnimate: true,
+                animation: true,
+                timeline: true
+            });
+
+            // Enable shadows
+            viewer.scene.globe.enableLighting = true;
+            viewer.scene.globe.shadows = Cesium.ShadowMode.ENABLED;
+            viewer.shadowMap.softShadows = true;
+            viewer.shadowMap.size = 2048;
+
+            console.log("Viewer initialized with World Terrain and shadows enabled");
+        }
+
+        // ============================================
+        // CET/CEST Time Zone Handling
+        // ============================================
+        function isCEST(date) {
+            const year = date.getUTCFullYear();
+            
+            const marchLast = new Date(Date.UTC(year, 2, 31));
+            while (marchLast.getUTCDay() !== 0) {
+                marchLast.setUTCDate(marchLast.getUTCDate() - 1);
+            }
+            marchLast.setUTCHours(1, 0, 0, 0);
+            
+            const octoberLast = new Date(Date.UTC(year, 9, 31));
+            while (octoberLast.getUTCDay() !== 0) {
+                octoberLast.setUTCDate(octoberLast.getUTCDate() - 1);
+            }
+            octoberLast.setUTCHours(1, 0, 0, 0);
+            
+            return date >= marchLast && date < octoberLast;
+        }
+
+        function cetToUtc(dateStr, timeStr) {
+            const [year, month, day] = dateStr.split('-').map(Number);
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            
+            const cetDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+            const offset = isCEST(cetDate) ? 2 : 1;
+            const utcDate = new Date(cetDate.getTime() - offset * 60 * 60 * 1000);
+            
+            console.log(`CET/CEST conversion: ${dateStr} ${timeStr} CET -> UTC offset: ${offset}h`);
+            return utcDate;
+        }
+
+        function utcToCet(utcDate) {
+            const offset = isCEST(utcDate) ? 2 : 1;
+            const cetDate = new Date(utcDate.getTime() + offset * 60 * 60 * 1000);
+            
+            return {
+                dateStr: cetDate.toISOString().split('T')[0],
+                timeStr: cetDate.toISOString().split('T')[1].substring(0, 5),
+                tzName: offset === 2 ? 'CEST' : 'CET'
+            };
+        }
+
+        // ============================================
+        // Date/Time Functions
+        // ============================================
+        function setViewerTime(utcDate) {
+            const julianDate = Cesium.JulianDate.fromDate(utcDate);
+            viewer.clock.currentTime = julianDate;
+            viewer.clock.shouldAnimate = false;
+            updateTimeDisplay();
+        }
+
+        function updateTimeDisplay() {
+            const currentJulian = viewer.clock.currentTime;
+            const utcDate = Cesium.JulianDate.toDate(currentJulian);
+            const cetInfo = utcToCet(utcDate);
+            
+            const displayElement = document.getElementById('currentTimeDisplay');
+            if (displayElement) {
+                displayElement.innerHTML = `
+                    <div class="label">Current Time</div>
+                    <div>${cetInfo.dateStr}</div>
+                    <div>${cetInfo.timeStr} ${cetInfo.tzName}</div>
+                `;
+            }
+        }
+
+        function handleSetDateTime() {
+            const dateInput = prompt(
+                "Enter date (Format: YYYY-MM-DD)\n\nExample: 2024-07-15",
+                new Date().toISOString().split('T')[0]
+            );
+            
+            if (!dateInput) return;
+            
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+                alert("Invalid date format! Please use YYYY-MM-DD");
+                return;
+            }
+            
+            const timeInput = prompt(
+                "Enter time in CET/CEST (Format: HH:MM)\n\nExample: 14:30",
+                "12:00"
+            );
+            
+            if (!timeInput) return;
+            
+            if (!/^\d{2}:\d{2}$/.test(timeInput)) {
+                alert("Invalid time format! Please use HH:MM");
+                return;
+            }
+            
+            const utcDate = cetToUtc(dateInput, timeInput);
+            setViewerTime(utcDate);
+            console.log(`Date/Time set to: ${dateInput} ${timeInput} CET`);
+        }
+
+        function handleQuickTimeSelect(event) {
+            const value = event.target.value;
+            if (!value) return;
+            
+            if (value === 'current') {
+                setViewerTime(new Date());
+                console.log("Time set to current time");
+            } else {
+                const currentJulian = viewer.clock.currentTime;
+                const currentDate = Cesium.JulianDate.toDate(currentJulian);
+                const dateStr = currentDate.toISOString().split('T')[0];
+                
+                const utcDate = cetToUtc(dateStr, value);
+                setViewerTime(utcDate);
+                console.log(`Quick time set to: ${dateStr} ${value} CET`);
+            }
+            
+            event.target.value = "";
+        }
+
+        // ============================================
+        // OSM Buildings Toggle
+        // ============================================
+        async function toggleOsmBuildings() {
+            const button = document.getElementById('toggleOsmBtn');
+            
+            if (!osmBuildingsEnabled) {
+                try {
+                    button.innerHTML = "⏳ Loading...";
+                    button.disabled = true;
+                    
+                    if (!osmBuildingsTileset) {
+                        osmBuildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188, {
+                            shadows: Cesium.ShadowMode.ENABLED
+                        });
+                        viewer.scene.primitives.add(osmBuildingsTileset);
+                        console.log("OSM Buildings tileset loaded");
+                    } else {
+                        osmBuildingsTileset.show = true;
+                    }
+                    
+                    osmBuildingsEnabled = true;
+                    button.innerHTML = "🏢 Disable OSM Buildings";
+                    button.className = "btn btn-danger";
+                    button.disabled = false;
+                    console.log("OSM Buildings enabled");
+                    
+                } catch (error) {
+                    console.error("Error loading OSM Buildings:", error);
+                    button.innerHTML = "🏢 Enable OSM Buildings";
+                    button.disabled = false;
+                    alert("Error loading OSM Buildings: " + error.message);
+                }
+            } else {
+                if (osmBuildingsTileset) {
+                    osmBuildingsTileset.show = false;
+                }
+                
+                osmBuildingsEnabled = false;
+                button.innerHTML = "🏢 Enable OSM Buildings";
+                button.className = "btn btn-secondary";
+                console.log("OSM Buildings disabled");
+            }
+        }
+
+        // ============================================
+        // Element Visibility Functions
+        // ============================================
+        function hideSelectedElement() {
+            if (!selectedFeature) {
+                console.log("No element selected to hide");
+                return;
+            }
+            
+            let elementName = "Unknown Element";
+            try {
+                const name = selectedFeature.getProperty('Name');
+                const type = selectedFeature.getProperty('Type');
+                const category = selectedFeature.getProperty('categoryName');
+                elementName = name || type || category || `Element ${hiddenFeatures.length + 1}`;
+            } catch (e) {
+                elementName = `Element ${hiddenFeatures.length + 1}`;
+            }
+            
+            hiddenFeatures.push({
+                feature: selectedFeature,
+                name: elementName,
+                originalColor: originalColor ? Cesium.Color.clone(originalColor) : Cesium.Color.WHITE
+            });
+            
+            selectedFeature.show = false;
+            
+            console.log(`Hidden element: ${elementName}`);
+            console.log(`Total hidden elements: ${hiddenFeatures.length}`);
+            
+            selectedFeature = null;
+            originalColor = null;
+            
+            updateHiddenCounter();
+            updateHiddenList();
+            hideInfoBox();
+            
+            document.getElementById('hideSelectedBtn').disabled = true;
+        }
+
+        function showAllHiddenElements() {
+            if (hiddenFeatures.length === 0) {
+                console.log("No hidden elements to show");
+                return;
+            }
+            
+            const count = hiddenFeatures.length;
+            
+            hiddenFeatures.forEach(item => {
+                try {
+                    item.feature.show = true;
+                    if (item.originalColor) {
+                        item.feature.color = item.originalColor;
+                    }
+                } catch (e) {
+                    console.warn("Could not restore feature:", e);
+                }
+            });
+            
+            hiddenFeatures = [];
+            console.log(`Restored ${count} hidden elements`);
+            
+            updateHiddenCounter();
+            updateHiddenList();
+        }
+
+        function showSingleElement(index) {
+            if (index < 0 || index >= hiddenFeatures.length) return;
+            
+            const item = hiddenFeatures[index];
+            
+            try {
+                item.feature.show = true;
+                if (item.originalColor) {
+                    item.feature.color = item.originalColor;
+                }
+                console.log(`Restored element: ${item.name}`);
+            } catch (e) {
+                console.warn("Could not restore feature:", e);
+            }
+            
+            hiddenFeatures.splice(index, 1);
+            
+            updateHiddenCounter();
+            updateHiddenList();
+        }
+
+        function updateHiddenCounter() {
+            const counter = document.getElementById('hiddenCounter');
+            const count = hiddenFeatures.length;
+            counter.innerHTML = `Hidden elements: <strong style="color: ${count > 0 ? '#FF9800' : '#aaa'}">${count}</strong>`;
+        }
+
+        function updateHiddenList() {
+            const listContainer = document.getElementById('hiddenList');
+            
+            if (hiddenFeatures.length === 0) {
+                listContainer.style.display = 'none';
+                listContainer.innerHTML = '';
+                return;
+            }
+            
+            listContainer.style.display = 'block';
+            
+            let html = '<div class="hidden-list-header">Click to unhide:</div>';
+            
+            hiddenFeatures.forEach((item, index) => {
+                html += `
+                    <div class="hidden-item" data-index="${index}">
+                        <span class="hidden-item-name">${escapeHtml(item.name)}</span>
+                        <span class="hidden-item-icon">👁️</span>
+                    </div>
+                `;
+            });
+            
+            listContainer.innerHTML = html;
+            
+            listContainer.querySelectorAll('.hidden-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    showSingleElement(index);
+                });
+            });
+        }
+
+        // ============================================
+        // Info Box Functions
+        // ============================================
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatPropertyValue(value) {
+            if (value === null || value === undefined) {
+                return '<em style="color: #666;">null</em>';
+            }
+            if (typeof value === 'object') {
+                try {
+                    return escapeHtml(JSON.stringify(value));
+                } catch (e) {
+                    return escapeHtml(String(value));
+                }
+            }
+            return escapeHtml(String(value));
+        }
+
+        function showInfoBox(feature) {
+            const infoBox = document.getElementById('infoBox');
+            
+            let content = `
+                <div class="info-header">
+                    <span class="info-title">📋 Element Properties</span>
+                    <button id="closeInfoBox" class="close-btn">✕</button>
+                </div>
+            `;
+            
+            const importantProps = [];
+            const otherProps = [];
+            
+            const propertyIds = feature.getPropertyIds();
+            propertyIds.forEach(id => {
+                const value = feature.getProperty(id);
+                if (CONFIG.importantProperties.includes(id)) {
+                    importantProps.push({ id, value });
+                } else {
+                    otherProps.push({ id, value });
+                }
+            });
+            
+            importantProps.sort((a, b) => {
+                return CONFIG.importantProperties.indexOf(a.id) - CONFIG.importantProperties.indexOf(b.id);
+            });
+            
+            if (importantProps.length > 0) {
+                content += '<div class="important-props">';
+                importantProps.forEach(prop => {
+                    content += `
+                        <div class="important-prop">
+                            <span class="prop-key">${escapeHtml(prop.id)}:</span>
+                            <span class="prop-value">${formatPropertyValue(prop.value)}</span>
+                        </div>
+                    `;
+                });
+                content += '</div>';
+            }
+            
+            if (otherProps.length > 0) {
+                content += '<div class="other-props-header">Other Properties</div>';
+                content += '<div class="other-props">';
+                otherProps.forEach(prop => {
+                    content += `
+                        <div class="other-prop">
+                            <span class="prop-key">${escapeHtml(prop.id)}:</span>
+                            <span class="prop-value">${formatPropertyValue(prop.value)}</span>
+                        </div>
+                    `;
+                });
+                content += '</div>';
+            }
+            
+            infoBox.innerHTML = content;
+            infoBox.style.display = 'block';
+            
+            document.getElementById('closeInfoBox').addEventListener('click', hideInfoBox);
+            
+            console.log(`Info box shown with ${importantProps.length} important and ${otherProps.length} other properties`);
+        }
+
+        function hideInfoBox() {
+            const infoBox = document.getElementById('infoBox');
+            infoBox.style.display = 'none';
+            
+            if (selectedFeature && originalColor) {
+                selectedFeature.color = originalColor;
+            }
+            
+            selectedFeature = null;
+            originalColor = null;
+            
+            document.getElementById('hideSelectedBtn').disabled = true;
+        }
+
+        // ============================================
+        // Click Handler
+        // ============================================
+        function setupClickHandler() {
+            const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+            
+            handler.setInputAction(function(movement) {
+                if (selectedFeature && originalColor) {
+                    selectedFeature.color = originalColor;
+                }
+                
+                const pickedFeature = viewer.scene.pick(movement.position);
+                
+                if (Cesium.defined(pickedFeature) && pickedFeature instanceof Cesium.Cesium3DTileFeature) {
+                    selectedFeature = pickedFeature;
+                    originalColor = Cesium.Color.clone(pickedFeature.color);
+                    
+                    pickedFeature.color = Cesium.Color.YELLOW.withAlpha(0.8);
+                    
+                    document.getElementById('hideSelectedBtn').disabled = false;
+                    
+                    const propertyIds = pickedFeature.getPropertyIds();
+                    console.log("Clicked element properties:", propertyIds);
+                    
+                    CONFIG.importantProperties.forEach(prop => {
+                        try {
+                            const value = pickedFeature.getProperty(prop);
+                            if (value !== undefined) {
+                                console.log(`  ${prop}: ${value}`);
+                            }
+                        } catch (e) {}
+                    });
+                    
+                    showInfoBox(pickedFeature);
+                } else {
+                    hideInfoBox();
+                }
+            }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+            
+            console.log("Click handler setup complete");
+        }
+
+        // ============================================
+        // Zoom Functions
+        // ============================================
+        function zoomToAsset(index) {
+            if (loadedTilesets[index]) {
+                viewer.flyTo(loadedTilesets[index], {
+                    duration: 1.5,
+                    offset: new Cesium.HeadingPitchRange(
+                        Cesium.Math.toRadians(0),
+                        Cesium.Math.toRadians(-45),
+                        0
+                    )
+                }).then(function() {
+                    console.log(`Camera zoomed to asset ${CONFIG.assetIds[index]}`);
+                });
+            }
+        }
+
+        function zoomToAllAssets() {
+            if (loadedTilesets.length === 0) {
+                console.warn("No tilesets loaded yet");
+                return;
+            }
+            
+            let combinedSphere = null;
+            
+            loadedTilesets.forEach(tileset => {
+                if (tileset && tileset.boundingSphere) {
+                    if (!combinedSphere) {
+                        combinedSphere = new Cesium.BoundingSphere(
+                            Cesium.Cartesian3.clone(tileset.boundingSphere.center),
+                            tileset.boundingSphere.radius
+                        );
+                    } else {
+                        combinedSphere = Cesium.BoundingSphere.union(combinedSphere, tileset.boundingSphere, combinedSphere);
+                    }
+                }
+            });
+            
+            if (combinedSphere) {
+                viewer.camera.flyToBoundingSphere(combinedSphere, {
+                    duration: 1.5,
+                    offset: new Cesium.HeadingPitchRange(
+                        Cesium.Math.toRadians(0),
+                        Cesium.Math.toRadians(-45),
+                        combinedSphere.radius * 2.5
+                    )
+                });
+                console.log("Camera zoomed to all assets");
+            }
+        }
+
+        function addAssetButton(assetId, index) {
+            const container = document.getElementById('assetButtons');
+            const button = document.createElement('button');
+            button.className = 'btn btn-small';
+            button.innerHTML = `📍 Asset ${assetId}`;
+            button.addEventListener('click', function() {
+                zoomToAsset(index);
+            });
+            container.appendChild(button);
+        }
+
+        // ============================================
+        // Load Tilesets
+        // ============================================
+        async function loadTileset(assetId, index) {
+            console.log(`Loading 3D tileset from Cesium Ion (Asset ID: ${assetId})...`);
+            
+            const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(assetId, {
+                shadows: Cesium.ShadowMode.ENABLED
+            });
+            
+            viewer.scene.primitives.add(tileset);
+            loadedTilesets[index] = tileset;
+            
+            console.log(`Tileset ${assetId} loaded successfully`);
+            addAssetButton(assetId, index);
+            
+            return tileset;
+        }
+
+        async function loadAllTilesets() {
+            const loadingText = document.querySelector('.loading-subtext');
+            
+            for (let i = 0; i < CONFIG.assetIds.length; i++) {
+                loadingText.textContent = `Loading asset ${i + 1} of ${CONFIG.assetIds.length}...`;
+                await loadTileset(CONFIG.assetIds[i], i);
+            }
+            
+            console.log("All tilesets loaded successfully");
+            
+            zoomToAllAssets();
+            
+            const today = new Date();
+            const dateStr = today.toISOString().split('T')[0];
+            const utcNoon = cetToUtc(dateStr, "12:00");
+            setViewerTime(utcNoon);
+        }
+
+        // ============================================
+        // Setup Event Listeners
+        // ============================================
+        function setupEventListeners() {
+            document.getElementById('setDateTimeBtn').addEventListener('click', handleSetDateTime);
+            document.getElementById('quickTimeSelect').addEventListener('change', handleQuickTimeSelect);
+            document.getElementById('toggleOsmBtn').addEventListener('click', toggleOsmBuildings);
+            document.getElementById('zoomToAllBtn').addEventListener('click', zoomToAllAssets);
+            document.getElementById('hideSelectedBtn').addEventListener('click', hideSelectedElement);
+            document.getElementById('showAllBtn').addEventListener('click', showAllHiddenElements);
+        }
+
+        // ============================================
+        // Initialize Application
+        // ============================================
+        async function init() {
+            console.log("=== 3D BIM Viewer - Shadow Simulation ===");
+            console.log(`Loading ${CONFIG.assetIds.length} assets: ${CONFIG.assetIds.join(', ')}`);
+            
+            try {
+                await initCesium();
+                setupEventListeners();
+                setupClickHandler();
+                await loadAllTilesets();
+                
+                // Update time display periodically
+                setInterval(updateTimeDisplay, 1000);
+                
+                // Hide loading overlay
+                document.getElementById('loadingOverlay').style.display = 'none';
+                
+                console.log("Application initialized successfully");
+                console.log("Instructions:");
+                console.log("- Click on elements to view their properties");
+                console.log("- Use 'Hide Selected' to hide elements");
+                console.log("- Use 'Show All Hidden' to restore hidden elements");
+                console.log("- Set date/time for shadow simulation");
+                console.log("- Toggle OSM Buildings for context");
+                
+            } catch (error) {
+                console.error("Initialization error:", error);
+                document.querySelector('.loading-text').textContent = 'Error loading application';
+                document.querySelector('.loading-subtext').textContent = error.message;
+                document.querySelector('.loader').style.display = 'none';
+            }
+        }
+
+        // Start the application when DOM is ready
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
